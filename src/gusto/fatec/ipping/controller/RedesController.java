@@ -9,96 +9,123 @@ import java.net.NetworkInterface;
 import java.net.SocketException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.logging.Logger;
+
+import static java.lang.Double.parseDouble;
+import static java.lang.Runtime.getRuntime;
+import static java.lang.String.format;
+import static java.util.logging.Logger.getLogger;
 
 public class RedesController {
 
-	public RedesController() {
-		super();
-	}
+    private static final Logger LOG = getLogger(RedesController.class.getName());
 
-	public String ip(String so) throws SocketException {
-		ArrayList<NetworkInterface> interfaces = Collections.list(NetworkInterface.getNetworkInterfaces());
-		String comando = "";
-		String saida = "";
-		String[] resultadoComandoSplit;
-		
-		//corrigir parte do windows
-		if (so.contains("Windows")) {
-			comando = "ipconfig";
-			resultadoComandoSplit = executarComando(comando).split("\nAdaptador Ethernet");
-			for (String lista : resultadoComandoSplit) {
-				if (lista.contains("IPv4")) {
-					String[] adaptador = lista.split("\n");
-					System.out.println(adaptador[0].trim());
+    public String ip(String so) throws SocketException {
+        ArrayList<NetworkInterface> interfaces = Collections.list(NetworkInterface.getNetworkInterfaces());
+        StringBuilder saida = new StringBuilder();
 
-					for (String ipv4 : adaptador) {
-						if (ipv4.contains("IPv4")) {
-							System.out.println("* Endereço IPv4: " + ipv4.substring(49));
-						}
-					}
-				}
-			}
-		} else if (so.contains("Linux")) {
-			comando = "ip a";
-			resultadoComandoSplit = executarComando(comando).split("\n");
-			for (String linha : resultadoComandoSplit) {
-				for (int i = 0; i < interfaces.size(); i++) {
-					if (linha.contains(interfaces.get(i).getName() + ":")) {
-						saida += "Inteface" + linha.substring(1, linha.lastIndexOf(":"));
-						saida += "\n";
-					}
-					if (linha.contains("inet ")) {
-						saida += "IPV4:" + linha.substring(8, linha.lastIndexOf("/"));
-						saida += "\n\n";
-						break;
-					}
-				}
-			}
-		}
-		return saida;
-	}
+        //corrigir parte do windows
+        if (so.contains("Windows")) {
+            getIpWindows();
+        } else if (so.contains("Linux")) {
+            getIpLinux(interfaces, saida);
+        }
+        return saida.toString();
+    }
 
-	public String ping(String so) {
-		String comando = "";
-		String saida = "";
-		String[] ping;
-		double tempoMedio;
-		if (so.contains("Windows")) {
-			comando = "ping -n 10 www.google.com";
-			ping = executarComando(comando).split("\n");
-			System.out.println("Tempo médio: " + ping[ping.length - 1].substring(44));
-		} else if (so.contains("Linux")) {
-			comando = "ifconfig";
-			executarComando(comando);
-			comando = "ping -c 10 www.google.com";
-			ping = executarComando(comando).split("\n");
-			for (String saidaPing : ping) {
-				if (saidaPing.contains("packets transmitted")) {
-					tempoMedio = Double.parseDouble(saidaPing.substring(58).replace("ms", "")) / 10;
-					saida += "Tempo Total: " + saidaPing.substring(58) + "\nTempo médio: " + tempoMedio + "ms";
-				}
-			}
-		}
-		return saida;
-	}
+    private void getIpWindows() {
+        String comando = "ipconfig";
+        String[] resultadoComandoSplit = executarComando(comando).split("\nAdaptador Ethernet");
 
-	private String executarComando(String comando) {
-		String saida = "";
+        for (String lista : resultadoComandoSplit) {
+            if (lista.contains("IPv4")) {
+                String[] adaptador = lista.split("\n");
 
-		try {
-			Process processo = Runtime.getRuntime().exec(comando);
-			InputStream stream = processo.getInputStream();
-			InputStreamReader reader = new InputStreamReader(stream);
-			BufferedReader buffer = new BufferedReader(reader);
-			String linha = buffer.readLine();
-			while (linha != null) {
-				saida += linha + "\n";
-				linha = buffer.readLine();
-			}
-		} catch (IOException e) {
-			System.out.println(e.getMessage());
-		}
+                String logInfo = adaptador[0].trim();
+                LOG.info(logInfo);
 
-		return saida;
-	}
+                for (String ipv4 : adaptador) {
+
+                    if (ipv4.contains("IPv4")) {
+                        String enderecoIpv4 = format("* Endereço IPv4: %s", ipv4.substring(49));
+                        LOG.info(enderecoIpv4);
+                    }
+                }
+            }
+        }
+    }
+
+    private void getIpLinux(ArrayList<NetworkInterface> interfaces, StringBuilder saida) {
+        String comando = "ip a";
+        String[] resultadoComandoSplit = executarComando(comando).split("\n");
+
+        for (String linha : resultadoComandoSplit) {
+
+            for (NetworkInterface anInterface : interfaces) {
+                if (linha.contains(anInterface.getName() + ":")) {
+                    saida.append("Inteface").append(linha.substring(1, linha.lastIndexOf(":"))).append("\n");
+                }
+                if (linha.contains("inet ")) {
+                    saida.append("IPV4:").append(linha.substring(8, linha.lastIndexOf("/"))).append("\n\n");
+                    break;
+                }
+            }
+        }
+    }
+
+    public String ping(String so) {
+        StringBuilder saida = new StringBuilder();
+
+        if (so.contains("Windows")) {
+            getPingWindows();
+        } else if (so.contains("Linux")) {
+            getPingLinux(saida);
+        }
+
+        return saida.toString();
+    }
+
+    private void getPingLinux(StringBuilder saida) {
+        String[] ping = executarComando("ping -c 10 www.google.com").split("\n");
+
+        for (String saidaPing : ping) {
+            if (saidaPing.contains("packets transmitted")) {
+                double tempoMedio = (parseDouble(saidaPing.substring(58).replace("ms", "")) / 10);
+
+                saida.append("Tempo Total: ")
+                        .append(saidaPing.substring(58))
+                        .append("\nTempo médio: ")
+                        .append(tempoMedio).append("ms");
+            }
+        }
+    }
+
+    private void getPingWindows() {
+        String comando = "ping -n 10 www.google.com";
+        String[] ping = executarComando(comando).split("\n");
+
+        String logMessage = format("Tempo médio: %s", ping[ping.length - 1].substring(44));
+        LOG.info(logMessage);
+    }
+
+    private String executarComando(String comando) {
+        StringBuilder saida = new StringBuilder();
+
+        try {
+            Process processo = getRuntime().exec(comando);
+            InputStream stream = processo.getInputStream();
+            InputStreamReader reader = new InputStreamReader(stream);
+            BufferedReader buffer = new BufferedReader(reader);
+            String linha = buffer.readLine();
+
+            while (linha != null) {
+                saida.append(linha).append("\n");
+                linha = buffer.readLine();
+            }
+        } catch (IOException e) {
+            LOG.warning(e.getMessage());
+        }
+
+        return saida.toString();
+    }
 }
